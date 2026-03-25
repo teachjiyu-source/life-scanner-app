@@ -63,74 +63,117 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Form Handling & Scoring Logic ---
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        let score = 0;
-        // Total of 6 questions
-        for (let i = 1; i <= 6; i++) {
-            const val = document.querySelector(`input[name="q${i}"]:checked`);
-            if (val && val.value === "1") {
-                score++;
+        // Disable submit button and show loading text
+        const submitBtn = document.querySelector('#scan-form button[type="submit"]');
+        const originalBtnText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span> INTERFACING WITH AI CORE...';
+
+        try {
+            let score = 0;
+            let manualQuestionsData = [];
+            
+            // Total of 6 questions
+            for (let i = 1; i <= 6; i++) {
+                const checkedInputs = document.querySelectorAll(`input[name="q${i}"]`);
+                if (checkedInputs.length > 0) {
+                    let questionLabel = checkedInputs[0].closest('.question-item').querySelector('label').textContent;
+                    
+                    const val = document.querySelector(`input[name="q${i}"]:checked`);
+                    if (val && val.value === "1") {
+                        score++;
+                        manualQuestionsData.push(questionLabel + " YES");
+                    } else if (val && val.value === "0") {
+                        manualQuestionsData.push(questionLabel + " NO");
+                    }
+                }
             }
+
+            const notes = document.getElementById('scan-notes').value;
+
+            // Call the AI
+            const reqBody = {
+                photoData: currentPhotoData,
+                notes: notes,
+                manualScore: score,
+                manualQuestionsData: manualQuestionsData.join(" | ")
+            };
+            
+            // Ensure local fallback message if not running via Vercel dev
+            if (location.port === "3000" && !location.hostname.includes("vercel")) {
+                console.warn("Running on simple python server. Serverless functions (/api) will return 404. Consider using 'vercel dev'.");
+            }
+
+            const response = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reqBody)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Server Error: ${response.status}`);
+            }
+
+            const aiResult = await response.json();
+            const classification = aiResult.classification;
+            const explanation = aiResult.explanation;
+            
+            // Determine styling based on AI classification
+            let statusClass = '';
+            if (classification === 'LIKELY NON-LIVING') {
+                statusClass = 'status-non-living';
+            } else if (classification === 'UNCERTAIN') {
+                statusClass = 'status-uncertain';
+            } else {
+                statusClass = 'status-living';
+            }
+
+            // Generate timestamp
+            const now = new Date();
+            const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString();
+
+            // Save current result in state
+            currentResult = {
+                id: Date.now(),
+                timestamp: timestamp,
+                score: score,
+                classification: classification,
+                explanation: explanation,
+                notes: notes,
+                photoData: currentPhotoData,
+                statusClass: statusClass
+            };
+
+            // Update UI in Result Screen
+            document.getElementById('result-score').textContent = score;
+            
+            const resultClassEl = document.getElementById('result-classification');
+            resultClassEl.textContent = classification;
+            resultClassEl.className = `classification glow-text ${statusClass}`;
+            
+            const scoreCircle = document.querySelector('.score-circle');
+            scoreCircle.className = `score-circle ${statusClass}`;
+
+            document.getElementById('result-explanation').textContent = explanation;
+
+            // Reset the Save button
+            btns.saveLog.disabled = false;
+            btns.saveLog.textContent = 'SAVE TO DATABANKS';
+
+            // Move to result screen
+            showScreen('result');
+            
+        } catch (error) {
+            console.error(error);
+            alert("AI Interface Failure: " + error.message + "\\n\\n(If testing locally, ensure you are running the app with 'vercel dev' so the /api route works, or configure CORS.)");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
         }
-
-        const notes = document.getElementById('scan-notes').value;
-
-        // Logic based on score
-        let classification = '';
-        let explanation = '';
-        let statusClass = '';
-
-        if (score >= 0 && score <= 2) {
-            classification = 'LIKELY NON-LIVING';
-            explanation = 'The subject exhibits very few or no characteristics of life. It is most likely an inanimate object or chemical compound.';
-            statusClass = 'status-non-living';
-        } else if (score >= 3 && score <= 4) {
-            classification = 'UNCERTAIN';
-            explanation = 'The subject shows some properties of life or active chemistry. Proceed with caution and conduct further specialized testing.';
-            statusClass = 'status-uncertain';
-        } else {
-            classification = 'POSSIBLY LIVING';
-            explanation = 'High probability of organic life! The subject demonstrates movement, growth, or significant reaction to stimuli. Isolate and observe carefully.';
-            statusClass = 'status-living';
-        }
-
-        // Generate timestamp
-        const now = new Date();
-        const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString();
-
-        // Save current result in state
-        currentResult = {
-            id: Date.now(),
-            timestamp: timestamp,
-            score: score,
-            classification: classification,
-            explanation: explanation,
-            notes: notes,
-            photoData: currentPhotoData,
-            statusClass: statusClass
-        };
-
-        // Update UI in Result Screen
-        document.getElementById('result-score').textContent = score;
-        
-        const resultClassEl = document.getElementById('result-classification');
-        resultClassEl.textContent = classification;
-        // Apply appropriate colors
-        resultClassEl.className = `classification glow-text ${statusClass}`;
-        
-        const scoreCircle = document.querySelector('.score-circle');
-        scoreCircle.className = `score-circle ${statusClass}`;
-
-        document.getElementById('result-explanation').textContent = explanation;
-
-        // Reset the Save button
-        btns.saveLog.disabled = false;
-        btns.saveLog.textContent = 'SAVE TO DATABANKS';
-
-        // Move to result screen
-        showScreen('result');
     });
 
     // --- Save to LocalStorage ---
