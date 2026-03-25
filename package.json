@@ -1,0 +1,6 @@
+{
+  "name": "lifecheck-app",
+  "version": "1.0.0",
+  "description": "Life Scanner Vercel App",
+  "type": "module"
+}
