@@ -129,11 +129,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn("Running on simple python server. Serverless functions (/api) will return 404. Consider using 'vercel dev'.");
             }
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 55000); // 55s timeout
+
             const response = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(reqBody)
+                body: JSON.stringify(reqBody),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
